@@ -46,7 +46,7 @@ function MostWanted() {
             onClick={() => handleCriminalClick(criminal.id)}
           >
             <div className="criminal-image">
-              <img src={criminal.image_url || 'https://via.placeholder.com/150'} alt={criminal.name} />
+              <img src={criminal.image_url || 'https://placehold.co/150x200/EFEFEF/AAAAAA?text=Photo+Not+Available'} alt={criminal.name} />
             </div>
             <div className="criminal-info">
               <h3>{criminal.name}</h3>
@@ -71,7 +71,7 @@ function MostWanted() {
             <div className="modal-body">
               <div className="criminal-details">
                 <div className="detail-image">
-                  <img src={selectedCriminal.image_url || 'https://via.placeholder.com/300'} alt={selectedCriminal.name} />
+                  <img src={selectedCriminal.image_url || 'https://placehold.co/300x400/EFEFEF/AAAAAA?text=Photo+Not+Available'} alt={selectedCriminal.name} />
                 </div>
                 
                 <div className="detail-info">
