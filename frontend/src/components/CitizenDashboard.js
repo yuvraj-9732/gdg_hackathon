@@ -2,6 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
+import ComplaintCard from './ComplaintCard';
+import StatCard from './StatCard';
+
+// Icons for the citizen dashboard
+const TotalIcon = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>;
+const ResolvedIcon = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
+const PendingIcon = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
 
 function CitizenDashboard() {
   const { user } = useAuth();
@@ -25,13 +32,29 @@ function CitizenDashboard() {
     }
   }, [user]);
 
+  const resolvedComplaints = complaints.filter(c => c.status === 'Resolved').length;
+  const pendingComplaints = complaints.length - resolvedComplaints;
+
   return (
     <div className="citizen-dashboard">
-      <div className="dashboard-actions">
-        <Link to="/complaint" className="dashboard-btn">File New Complaint</Link>
-        <Link to="/tracking" className="dashboard-btn">Track Complaints</Link>
+      <div className="dashboard-header-personal">
+        <h2>Citizen Dashboard</h2>
+        <p>Welcome, {user.name}. View your complaint history and status.</p>
       </div>
-      
+      <div className="dashboard-stats">
+        <StatCard 
+          icon={<TotalIcon />}
+          title="Total Complaints Filed"
+          value={complaints.length} />
+        <StatCard 
+          icon={<ResolvedIcon />}
+          title="Resolved Complaints"
+          value={resolvedComplaints} />
+        <StatCard 
+          icon={<PendingIcon />}
+          title="Pending Complaints"
+          value={pendingComplaints} />
+      </div>
       <h3>Your Complaints</h3>
       
       {loading ? (
@@ -41,14 +64,7 @@ function CitizenDashboard() {
       ) : (
         <div className="complaints-list">
           {complaints.map(complaint => (
-            <div key={complaint.id} className="complaint-card">
-              <h4>{complaint.type}</h4>
-              <p>{complaint.description.substring(0, 100)}...</p>
-              <div className="complaint-meta">
-                <span>Status: {complaint.status}</span>
-                <span>Created: {new Date(complaint.created_at).toLocaleDateString()}</span>
-              </div>
-            </div>
+            <ComplaintCard key={complaint.id} complaint={complaint} userType="citizen" />
           ))}
         </div>
       )}
