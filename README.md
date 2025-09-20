@@ -84,18 +84,53 @@ By integrating agentic AI into the fight against corruption, **Bhrashtachar Mukt
 
 ---
 
-## Getting Started
+## Getting Started (Development)
 
-*(This section would typically include instructions on how to set up and run the project locally.)*
+### Prerequisites
+
+- Node.js and npm
+- Git
+
+### 1. Clone the Repository
 
 ```bash
 # Clone the repository
 git clone https://github.com/your-username/bhrashtachar-mukt.git
+cd bhrashtachar-mukt
+```
 
-# Navigate to the frontend directory
-cd bhrashtachar-mukt/frontend
+### 2. Install Dependencies
 
-# Install dependencies
+This needs to be done once for both the frontend and backend.
+
+```bash
+# Install frontend dependencies
+cd frontend && npm install && cd ..
+
+# Install backend dependencies
+cd backend && npm install && cd ..
+```
+
+### 3. Run the Application (One-Click Start)
+
+Use the universal start script from the root directory.
+
+**On macOS/Linux:**
+```bash
+# Make the script executable (only need to do this once)
+chmod +x start.sh
+
+# Run the script
+./start.sh
+```
+
+**On Windows:**
+```bash
+# Just run the batch file
+start.bat
+```
+
+This will launch both the frontend and backend servers. The frontend will be available at `http://localhost:3000` (or your configured port).
 npm install
 
 # Run the application
@@ -103,4 +138,3 @@ npm start
 ```
 
 *(Backend setup instructions would follow here.)*
-
