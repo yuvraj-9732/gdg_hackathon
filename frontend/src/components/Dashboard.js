@@ -12,7 +12,7 @@ function Dashboard() {
   const [dashboardData, setDashboardData] = useState(null);
 
   useEffect(() => {
-    axios.get('http://localhost:5000/api/dashboard')
+    axios.get('/api/dashboard')
       .then(response => setDashboardData(response.data))
       .catch(error => console.error(error));
   }, []);

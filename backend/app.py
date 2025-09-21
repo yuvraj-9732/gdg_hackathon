@@ -310,32 +310,21 @@ def init_db():
         # columns = [column<source_id data="1" title="N/A" /> for column in c.fetchall()]
         columns = [column[1] for column in c.fetchall()]
         
-        if 'user_id' not in columns:
-            print("user_id column missing. Adding it...")
-            # Add the user_id column
-            c.execute("ALTER TABLE complaints ADD COLUMN user_id INTEGER")
-            
-            # Add location columns
-            c.execute("ALTER TABLE complaints ADD COLUMN latitude REAL")
-            c.execute("ALTER TABLE complaints ADD COLUMN longitude REAL")
-            
-            # Add columns for Integrity Index and Systemic Flaw features
-            print("Adding new columns for v1.1 features...")
+        if 'department' not in columns:
+            print("Older schema detected. Upgrading database with new columns...")
+            if 'user_id' not in columns:
+                c.execute("ALTER TABLE complaints ADD COLUMN user_id INTEGER")
+                c.execute("ALTER TABLE complaints ADD COLUMN latitude REAL")
+                c.execute("ALTER TABLE complaints ADD COLUMN longitude REAL")
             c.execute("ALTER TABLE complaints ADD COLUMN assigned_official_id INTEGER REFERENCES users(id)")
             c.execute("ALTER TABLE complaints ADD COLUMN department TEXT")
             c.execute("ALTER TABLE complaints ADD COLUMN satisfaction_rating INTEGER")
-            
-            # Retroactively assign departments for demo data
             c.execute("UPDATE complaints SET department = 'Police' WHERE type = 'bribery'")
             c.execute("UPDATE complaints SET department = 'Passport Office' WHERE type = 'delay'")
             c.execute("UPDATE complaints SET department = 'Municipal Corporation' WHERE type = 'nepotism'")
-
-
-            # Update existing complaints to have user_id = 1 (assuming user with id 1 exists)
             c.execute("UPDATE complaints SET user_id = 1 WHERE user_id IS NULL")
-            
             conn.commit()
-            print("user_id column added successfully!")
+            print("Database schema upgraded successfully!")
 
         # Migration for user_tags table
         c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_tags'")
@@ -351,23 +340,6 @@ def init_db():
                           FOREIGN KEY(complaint_id) REFERENCES complaints(id))''')
             conn.commit()
             print("user_tags table created successfully!")
-
-        if 'department' not in columns:
-            print("department column and other v1.1 features missing. Adding them...")
-            c.execute("ALTER TABLE complaints ADD COLUMN assigned_official_id INTEGER REFERENCES users(id)")
-            c.execute("ALTER TABLE complaints ADD COLUMN department TEXT")
-            c.execute("ALTER TABLE complaints ADD COLUMN satisfaction_rating INTEGER")
-            
-            # Retroactively assign departments for demo data
-            c.execute("UPDATE complaints SET department = 'Police' WHERE type = 'bribery'")
-            c.execute("UPDATE complaints SET department = 'Passport Office' WHERE type = 'delay'")
-            c.execute("UPDATE complaints SET department = 'Municipal Corporation' WHERE type = 'nepotism'")
-
-
-            # Update existing complaints to have user_id = 1 (assuming user with id 1 exists)
-            c.execute("UPDATE complaints SET user_id = 1 WHERE user_id IS NULL")
-            conn.commit()
-            print("v1.1 columns added successfully!")
 
         
         conn.close()

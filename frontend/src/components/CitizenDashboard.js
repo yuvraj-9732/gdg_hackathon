@@ -18,7 +18,7 @@ function CitizenDashboard() {
   useEffect(() => {
     const fetchComplaints = async () => {
       try {
-        const response = await axios.get(`http://localhost:5000/api/user/complaints?user_id=${user.id}`);
+        const response = await axios.get(`/api/user/complaints?user_id=${user.id}`);
         setComplaints(response.data);
       } catch (error) {
         console.error('Error fetching complaints:', error);

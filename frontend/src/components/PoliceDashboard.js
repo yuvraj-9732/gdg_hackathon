@@ -28,7 +28,7 @@ function PoliceDashboard() {
   useEffect(() => {
     const fetchComplaints = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/api/police/complaints');
+        const response = await axios.get('/api/police/complaints');
         setComplaints(response.data);
       } catch (error) {
         console.error('Error fetching complaints:', error);
@@ -200,7 +200,8 @@ function PoliceDashboard() {
             <ul>
               {evidence.map(file => (
                 <li key={file.id}>
-                  <a href={`http://localhost:5000/uploads/${file.file_path}`} target="_blank" rel="noopener noreferrer">
+                  {/* This now uses a relative path, which will be correctly prefixed by axios's baseURL */}
+                  <a href={`${axios.defaults.baseURL}/uploads/${file.file_path}`} target="_blank" rel="noopener noreferrer">
                     {file.file_path}
                   </a>
                 </li>
