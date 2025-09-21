@@ -6,6 +6,7 @@ import google.generativeai as genai
 from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
 from flask import Flask, request, jsonify, send_from_directory
+from werkzeug.utils import secure_filename
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -15,6 +16,10 @@ load_dotenv()
 # Initialize Flask
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": ["http://localhost:3000"]}})
+
+# Configuration for file uploads
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Configure Gemini Pro
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
@@ -62,7 +67,11 @@ def init_db():
                       user_id INTEGER,
                       latitude REAL,
                       longitude REAL,
-                      FOREIGN KEY(user_id) REFERENCES users(id))''')
+                      assigned_official_id INTEGER,
+                      department TEXT,
+                      satisfaction_rating INTEGER,
+                      FOREIGN KEY(user_id) REFERENCES users(id),
+                      FOREIGN KEY(assigned_official_id) REFERENCES users(id))''')
         
         # Create rewards table
         c.execute('''CREATE TABLE rewards
@@ -120,6 +129,25 @@ def init_db():
                       anonymous INTEGER,
                       created_at TIMESTAMP)''')
         
+        # Create evidence table to store file paths
+        c.execute('''CREATE TABLE evidence
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      complaint_id INTEGER,
+                      file_path TEXT,
+                      FOREIGN KEY(complaint_id) REFERENCES complaints(id))''')
+
+        # Create user_tags table for flagging officials
+        c.execute('''CREATE TABLE user_tags
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      user_id INTEGER,
+                      tag_type TEXT,
+                      complaint_id INTEGER,
+                      created_at TIMESTAMP,
+                      FOREIGN KEY(user_id) REFERENCES users(id),
+                      FOREIGN KEY(complaint_id) REFERENCES complaints(id))''')
+
+        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
         # Insert dummy users
         c.execute("INSERT INTO users (email, password, aadhar, role, name) VALUES (?, ?, ?, ?, ?)",
                   ("citizen@example.com", "password123", "123456789012", "citizen", "Rajesh Kumar"))
@@ -131,11 +159,11 @@ def init_db():
                   ("official@example.com", "password123", "123456789014", "official", "Officer Singh"))
         
         # Insert mock complaints
-        c.execute("INSERT INTO complaints (type, description, status, created_at, updated_at, user_id, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                  ("bribery", "Officer asked for ₹5000 to approve license", "Resolved", datetime.now(), datetime.now(), 1, 19.0760, 72.8777))
+        c.execute("INSERT INTO complaints (type, description, status, created_at, updated_at, user_id, latitude, longitude, department) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                  ("bribery", "Officer asked for ₹5000 to approve license", "Resolved", datetime.now(), datetime.now(), 1, 19.0760, 72.8777, "Police"))
         
-        c.execute("INSERT INTO complaints (type, description, status, created_at, updated_at, user_id, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                  ("delay", "Passport application pending for 3 months", "In Progress", datetime.now(), datetime.now(), 1, 28.6139, 77.2090))
+        c.execute("INSERT INTO complaints (type, description, status, created_at, updated_at, user_id, latitude, longitude, department) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                  ("delay", "Passport application pending for 3 months", "In Progress", datetime.now(), datetime.now(), 1, 28.6139, 77.2090, "Passport Office"))
         
         # Insert mock reward
         c.execute("INSERT INTO rewards (complaint_id, amount, status) VALUES (?, ?, ?)",
@@ -153,10 +181,10 @@ def init_db():
         
         # Insert officials
         c.execute("INSERT INTO officials (name, department, position, performance_score) VALUES (?, ?, ?, ?)",
-                  ("Rakesh Asthana", "CBI", "Special Director", 85.5))
+                  ("Rakesh Asthana", "Police", "Special Director", 85.5))
         
         c.execute("INSERT INTO officials (name, department, position, performance_score) VALUES (?, ?, ?, ?)",
-                  ("Alok Verma", "CBI", "Director", 78.2))
+                  ("Alok Verma", "Passport Office", "Director", 78.2))
         
         # Insert community reports
         c.execute("INSERT INTO community_reports (location, issue, severity, description, status, created_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -261,6 +289,18 @@ def init_db():
                           created_at TIMESTAMP)''')
             conn.commit()
             print("feedback table created successfully!")
+
+        # Check if evidence table exists
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='evidence'")
+        if not c.fetchone():
+            print("evidence table missing. Creating it...")
+            c.execute('''CREATE TABLE evidence
+                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                          complaint_id INTEGER,
+                          file_path TEXT,
+                          FOREIGN KEY(complaint_id) REFERENCES complaints(id))''')
+            conn.commit()
+            print("evidence table created successfully!")
         
         # Check if user_id column exists in complaints table
         c.execute("PRAGMA table_info(complaints)")
@@ -276,11 +316,56 @@ def init_db():
             c.execute("ALTER TABLE complaints ADD COLUMN latitude REAL")
             c.execute("ALTER TABLE complaints ADD COLUMN longitude REAL")
             
+            # Add columns for Integrity Index and Systemic Flaw features
+            print("Adding new columns for v1.1 features...")
+            c.execute("ALTER TABLE complaints ADD COLUMN assigned_official_id INTEGER REFERENCES users(id)")
+            c.execute("ALTER TABLE complaints ADD COLUMN department TEXT")
+            c.execute("ALTER TABLE complaints ADD COLUMN satisfaction_rating INTEGER")
+            
+            # Retroactively assign departments for demo data
+            c.execute("UPDATE complaints SET department = 'Police' WHERE type = 'bribery'")
+            c.execute("UPDATE complaints SET department = 'Passport Office' WHERE type = 'delay'")
+            c.execute("UPDATE complaints SET department = 'Municipal Corporation' WHERE type = 'nepotism'")
+
+
             # Update existing complaints to have user_id = 1 (assuming user with id 1 exists)
             c.execute("UPDATE complaints SET user_id = 1 WHERE user_id IS NULL")
             
             conn.commit()
             print("user_id column added successfully!")
+
+        # Migration for user_tags table
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_tags'")
+        if not c.fetchone():
+            print("user_tags table missing. Creating it...")
+            c.execute('''CREATE TABLE user_tags
+                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                          user_id INTEGER,
+                          tag_type TEXT,
+                          complaint_id INTEGER,
+                          created_at TIMESTAMP,
+                          FOREIGN KEY(user_id) REFERENCES users(id),
+                          FOREIGN KEY(complaint_id) REFERENCES complaints(id))''')
+            conn.commit()
+            print("user_tags table created successfully!")
+
+        if 'department' not in columns:
+            print("department column and other v1.1 features missing. Adding them...")
+            c.execute("ALTER TABLE complaints ADD COLUMN assigned_official_id INTEGER REFERENCES users(id)")
+            c.execute("ALTER TABLE complaints ADD COLUMN department TEXT")
+            c.execute("ALTER TABLE complaints ADD COLUMN satisfaction_rating INTEGER")
+            
+            # Retroactively assign departments for demo data
+            c.execute("UPDATE complaints SET department = 'Police' WHERE type = 'bribery'")
+            c.execute("UPDATE complaints SET department = 'Passport Office' WHERE type = 'delay'")
+            c.execute("UPDATE complaints SET department = 'Municipal Corporation' WHERE type = 'nepotism'")
+
+
+            # Update existing complaints to have user_id = 1 (assuming user with id 1 exists)
+            c.execute("UPDATE complaints SET user_id = 1 WHERE user_id IS NULL")
+            conn.commit()
+            print("v1.1 columns added successfully!")
+
         
         conn.close()
         
@@ -306,6 +391,24 @@ def analyze_with_gemini(text):
         return response.text
     except Exception as e:
         return f"Error analyzing with Gemini: {str(e)}"
+
+def analyze_systemic_flaws(complaints_json):
+    try:
+        prompt = f"""
+        As a Systemic Flaw Analyst AI, your task is to identify root causes and process vulnerabilities from a list of corruption complaints.
+        Analyze the following JSON data of all complaints. Look for clusters of similar issues (e.g., same complaint type, same location, recurring keywords).
+        Based on these clusters, identify 1-3 potential systemic flaws.
+        For each flaw, provide:
+        1.  **Flaw Description:** A brief summary of the recurring problem.
+        2.  **Evidence:** Mention the complaint types or keywords that point to this flaw.
+        3.  **Policy Recommendation:** Suggest a concrete, actionable policy change to fix the vulnerability.
+
+        Complaints Data: {complaints_json}
+        """
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Error analyzing for systemic flaws with Gemini: {str(e)}"
 
 # Routes
 @app.route('/api/login', methods=['POST'])
@@ -357,9 +460,9 @@ def get_police_complaints():
 
 @app.route('/api/police/complaints/<int:complaint_id>/comment', methods=['POST'])
 def add_comment(complaint_id):
-    data = request.json
-    user_id = data.get('user_id')
-    comment_text = data.get('comment')
+    # Handle multipart form data to allow file uploads with comments
+    user_id = request.form.get('user_id')
+    comment_text = request.form.get('comment')
     
     conn = get_db_connection()
     c = conn.cursor()
@@ -368,9 +471,37 @@ def add_comment(complaint_id):
                  VALUES (?, ?, ?, ?)''',
               (complaint_id, user_id, comment_text, datetime.now()))
     
+    # On first official comment, assign the official and their department to the complaint
+    c.execute('SELECT assigned_official_id FROM complaints WHERE id = ?', (complaint_id,))
+    if c.fetchone()['assigned_official_id'] is None:
+        # This is a simplification. In a real app, you'd look up the user's department.
+        # For now, we'll derive it from the complaint type as a fallback.
+        c.execute('SELECT type FROM complaints WHERE id = ?', (complaint_id,))
+        complaint_type = c.fetchone()['type']
+        department_map = {'bribery': 'Police', 'harassment': 'Police', 'delay': 'Passport Office', 'nepotism': 'Municipal Corporation', 'embezzlement': 'Finance Ministry'}
+        department = department_map.get(complaint_type, 'General Administration')
+
+        # **Corruption Tagging Logic**
+        # If the complaint is about bribery, tag the assigned officer.
+        if complaint_type == 'bribery':
+            c.execute("INSERT INTO user_tags (user_id, tag_type, complaint_id, created_at) VALUES (?, ?, ?, ?)",
+                      (user_id, 'bribery_complaint', complaint_id, datetime.now()))
+
+        c.execute('UPDATE complaints SET assigned_official_id = ?, department = ? WHERE id = ?', (user_id, department, complaint_id))
+    
     # Update complaint status to "In Progress"
     c.execute('UPDATE complaints SET status = ? WHERE id = ?', ('In Progress', complaint_id))
     
+    # Handle file uploads for evidence
+    files = request.files.getlist('evidence')
+    for file in files:
+        if file:
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
+            # Store just the filename in the evidence table
+            c.execute("INSERT INTO evidence (complaint_id, file_path) VALUES (?, ?)", (complaint_id, filename))
+
     conn.commit()
     conn.close()
     
@@ -378,9 +509,9 @@ def add_comment(complaint_id):
 
 @app.route('/api/police/complaints/<int:complaint_id>/close', methods=['POST'])
 def close_complaint(complaint_id):
-    data = request.json
-    user_id = data.get('user_id')
-    resolution = data.get('resolution')
+    # Handle multipart form data to allow file uploads with the closing statement
+    user_id = request.form.get('user_id')
+    resolution = request.form.get('resolution')
     
     conn = get_db_connection()
     c = conn.cursor()
@@ -392,6 +523,16 @@ def close_complaint(complaint_id):
     
     # Update complaint status to "Resolved"
     c.execute('UPDATE complaints SET status = ? WHERE id = ?', ('Resolved', complaint_id))
+    
+    # Handle final evidence file uploads
+    files = request.files.getlist('evidence')
+    for file in files:
+        if file:
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
+            # Store just the filename in the evidence table
+            c.execute("INSERT INTO evidence (complaint_id, file_path) VALUES (?, ?)", (complaint_id, filename))
     
     conn.commit()
     conn.close()
@@ -412,14 +553,59 @@ def get_comments(complaint_id):
     
     return jsonify([dict(comment) for comment in comments])
 
+@app.route('/api/complaints/<int:complaint_id>/evidence', methods=['GET'])
+def get_evidence(complaint_id):
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    c.execute('SELECT * FROM evidence WHERE complaint_id = ?', (complaint_id,))
+    evidence_files = c.fetchall()
+    conn.close()
+    
+    return jsonify([dict(file) for file in evidence_files])
+
+@app.route('/api/users/<int:user_id>/tags', methods=['GET'])
+def get_user_tags(user_id):
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    c.execute('SELECT tag_type, COUNT(*) as count FROM user_tags WHERE user_id = ? GROUP BY tag_type', (user_id,))
+    tags = c.fetchall()
+    conn.close()
+    return jsonify([dict(tag) for tag in tags])
+
+@app.route('/api/complaints/<int:complaint_id>/rate', methods=['POST'])
+def rate_complaint(complaint_id):
+    data = request.json
+    rating = data.get('rating')
+    user_id = data.get('user_id') # In a real app, verify this user filed the complaint
+
+    if not (1 <= rating <= 5):
+        return jsonify({'error': 'Rating must be between 1 and 5'}), 400
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute('UPDATE complaints SET satisfaction_rating = ? WHERE id = ? AND status = "Resolved"', (rating, complaint_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+# Route to serve uploaded files
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    # Ensure that the path is safe
+    if '..' in filename or filename.startswith('/'):
+        return "Invalid path", 400
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 @app.route('/api/complaints', methods=['POST'])
 def submit_complaint():
-    data = request.json
-    complaint_type = data.get('type')
-    description = data.get('description')
-    user_id = data.get('user_id')
-    latitude = data.get('latitude')
-    longitude = data.get('longitude')
+    # Handle multipart form data
+    complaint_type = request.form.get('type')
+    description = request.form.get('description')
+    user_id = request.form.get('user_id')
+    latitude = request.form.get('latitude')
+    longitude = request.form.get('longitude')
     
     # Redact PII
     redacted_description = redact_pii(description)
@@ -442,10 +628,24 @@ def submit_complaint():
     # Store in database
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute('''INSERT INTO complaints (type, description, status, created_at, updated_at, user_id, latitude, longitude)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-              (complaint_type, redacted_description, 'Submitted', datetime.now(), datetime.now(), user_id, latitude, longitude))
+    # Assign a default department based on type
+    department_map = {'bribery': 'Police', 'harassment': 'Police', 'delay': 'Passport Office', 'nepotism': 'Municipal Corporation', 'embezzlement': 'Finance Ministry'}
+    department = department_map.get(complaint_type, 'General Administration')
+    c.execute('''INSERT INTO complaints (type, description, status, created_at, updated_at, user_id, latitude, longitude, department)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+              (complaint_type, redacted_description, 'Submitted', datetime.now(), datetime.now(), user_id, latitude, longitude, department))
     complaint_id = c.lastrowid
+
+    # Handle file uploads
+    files = request.files.getlist('evidence')
+    for file in files:
+        if file:
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
+            # Store just the filename in the new evidence table
+            c.execute("INSERT INTO evidence (complaint_id, file_path) VALUES (?, ?)", (complaint_id, filename))
+
     conn.commit()
     conn.close()
     
@@ -520,6 +720,45 @@ def get_dashboard():
         'pending_reports': pending_reports,
         'avg_rating': round(avg_rating, 1)
     })
+
+@app.route('/api/integrity-index', methods=['GET'])
+def get_integrity_index():
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    # Calculate scores per department
+    c.execute('''
+        SELECT
+            department,
+            COUNT(*) as total_complaints,
+            SUM(CASE WHEN status = 'Resolved' THEN 1 ELSE 0 END) as resolved_complaints,
+            AVG(satisfaction_rating) as avg_satisfaction
+        FROM complaints
+        WHERE department IS NOT NULL
+        GROUP BY department
+    ''')
+    
+    index_data = []
+    for row in c.fetchall():
+        department_stats = dict(row)
+        total = department_stats['total_complaints']
+        resolved = department_stats['resolved_complaints']
+        satisfaction = department_stats['avg_satisfaction'] or 0 # Default to 0 if no ratings
+
+        # Weighted score: 50% resolution rate, 50% satisfaction
+        resolution_score = (resolved / total * 100) if total > 0 else 0
+        satisfaction_score = (satisfaction / 5 * 100) # Scale 1-5 rating to 0-100
+
+        integrity_score = (resolution_score * 0.5) + (satisfaction_score * 0.5)
+        
+        department_stats['integrity_score'] = round(integrity_score, 1)
+        index_data.append(department_stats)
+
+    conn.close()
+    # Sort by highest score
+    sorted_index = sorted(index_data, key=lambda x: x['integrity_score'], reverse=True)
+    return jsonify(sorted_index)
+
 @app.route('/api/rewards', methods=['POST'])
 def create_reward():
     data = request.json
@@ -600,6 +839,18 @@ def detect_anomalies():
     
     conn.close()
     return jsonify(anomalies)
+
+@app.route('/api/systemic-flaw-analysis', methods=['GET'])
+def get_systemic_flaw_analysis():
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute('SELECT type, description, status, department FROM complaints')
+    complaints = [dict(row) for row in c.fetchall()]
+    conn.close()
+
+    complaints_json = json.dumps(complaints, indent=2)
+    analysis = analyze_systemic_flaws(complaints_json)
+    return jsonify({'analysis': analysis})
 
 # 2. Enhanced Reporting and Analytics
 
@@ -930,6 +1181,7 @@ def get_most_wanted_details(criminal_id):
 # Route to serve static map marker images
 @app.route('/<path:filename>')
 def serve_static_files(filename):
+    # This route is now less specific and might conflict. The /uploads/<filename> is better.
     static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'images')
     return send_from_directory(static_dir, filename)
 
