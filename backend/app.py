@@ -4,6 +4,9 @@ import json
 from datetime import datetime
 import google.generativeai as genai
 from presidio_analyzer import AnalyzerEngine
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from presidio_anonymizer import AnonymizerEngine
 from flask import Flask, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
@@ -375,6 +378,33 @@ def redact_pii(text):
     anonymized_text = anonymizer.anonymize(text=text, analyzer_results=results)
     return anonymized_text.text
 
+def send_email(to_address, subject, body):
+    """Sends an email using SMTP (configured for Gmail)."""
+    from_address = os.environ.get("EMAIL_USER")
+    password = os.environ.get("EMAIL_PASSWORD")
+
+    if not from_address or not password:
+        print("WARNING: EMAIL_USER or EMAIL_PASSWORD not set in .env file. Skipping email.")
+        return
+
+    msg = MIMEMultipart()
+    msg['From'] = from_address
+    msg['To'] = to_address
+    msg['Subject'] = subject
+
+    msg.attach(MIMEText(body, 'plain'))
+
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(from_address, password)
+        text = msg.as_string()
+        server.sendmail(from_address, to_address, text)
+        server.quit()
+        print(f"Confirmation email sent successfully to {to_address}")
+    except Exception as e:
+        print(f"ERROR: Failed to send email. {e}")
+
 # Gemini Pro analysis function
 def analyze_with_gemini(text):
     try:
@@ -645,6 +675,29 @@ def submit_complaint():
             file.save(file_path)
             # Store just the filename in the new evidence table
             c.execute("INSERT INTO evidence (complaint_id, file_path) VALUES (?, ?)", (complaint_id, filename))
+
+    # Fetch user's email to send confirmation
+    c.execute('SELECT email FROM users WHERE id = ?', (user_id,))
+    user_record = c.fetchone()
+    if user_record:
+        user_email = user_record['email']
+        email_subject = f"Complaint Registered Successfully (ID: {complaint_id})"
+        email_body = f"""
+Dear Citizen,
+
+Thank you for submitting your complaint. It has been registered with the ID: {complaint_id}.
+
+Please find a copy of the auto-generated preliminary FIR draft below for your records.
+--------------------------------------------------
+{fir_draft}
+--------------------------------------------------
+
+We will keep you updated on the progress.
+
+Regards,
+Bhrashtachar Mukt Team
+"""
+        send_email(user_email, email_subject, email_body)
 
     conn.commit()
     conn.close()

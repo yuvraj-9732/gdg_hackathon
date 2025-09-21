@@ -83,6 +83,7 @@ This agent acts as an early-warning system for internal vigilance departments by
 ## Core Features
 - **Citizen Complaint Portal:** A secure and user-friendly interface for submitting detailed corruption complaints, now with the ability to upload multimedia evidence (PDF, images, audio, video).
 - **Citizen & Police Dashboards:** Separate, role-based dashboards. Citizens can track their case status and provide satisfaction ratings on resolved cases. Police officers can view complaint details, add progress notes, upload evidence, and trigger high-level AI analysis.
+- **Automated Email Confirmations:** Instantly sends an email to the user upon complaint submission, containing their unique complaint ID and a copy of the AI-generated preliminary FIR draft for their records.
 - **AI-Powered Legal Guidance:** Instant access to legal information and procedural steps relevant to a complaint.
 - **Whistleblower Protection System:** Automated risk assessment and safety recommendations.
 - **Advanced Analytics Dashboard:** Interactive charts showing trends, complaint types, resolution times, and AI-detected anomalies.
