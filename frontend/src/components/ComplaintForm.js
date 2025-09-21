@@ -8,6 +8,7 @@ function ComplaintForm() {
     type: '',
     description: ''
   });
+  const [evidence, setEvidence] = useState(null);
   const [submissionStatus, setSubmissionStatus] = useState(null);
   const [analysis, setAnalysis] = useState('');
   const [firDraft, setFirDraft] = useState('');
@@ -15,6 +16,10 @@ function ComplaintForm() {
 
   const handleChange = (e) => {
     setComplaint({ ...complaint, [e.target.name]: e.target.value });
+  };
+
+  const handleFileChange = (e) => {
+    setEvidence(e.target.files);
   };
 
   const handleSubmit = async (e) => {
@@ -30,14 +35,21 @@ function ComplaintForm() {
     }
 
     try {
-      console.log('Submitting complaint:', { ...complaint, user_id: user.id });
+      const formData = new FormData();
+      formData.append('type', complaint.type);
+      formData.append('description', complaint.description);
+      formData.append('user_id', user.id);
+      if (evidence) {
+        for (let i = 0; i < evidence.length; i++) {
+          formData.append('evidence', evidence[i]);
+        }
+      }
       
-      const response = await axios.post('/api/complaints', {
-        ...complaint,
-        user_id: user.id
+      const response = await axios.post('/api/complaints', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
       });
-      
-      console.log('Response:', response.data);
       
       setSubmissionStatus({ success: true, id: response.data.id });
       setAnalysis(response.data.analysis);
@@ -45,6 +57,8 @@ function ComplaintForm() {
       
       // Reset form
       setComplaint({ type: '', description: '' });
+      setEvidence(null);
+      e.target.reset(); // Resets the form fields, including the file input
     } catch (error) {
       console.error('Error submitting complaint:', error);
       
@@ -112,6 +126,17 @@ function ComplaintForm() {
             value={complaint.description} 
             onChange={handleChange}
             required
+          />
+        </div>
+        
+        <div className="form-group">
+          <label>Evidence (PDF, MP4, MP3, Images):</label>
+          <input
+            type="file"
+            name="evidence"
+            onChange={handleFileChange}
+            multiple
+            accept="application/pdf,video/mp4,audio/mpeg,image/*"
           />
         </div>
         

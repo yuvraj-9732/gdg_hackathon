@@ -15,7 +15,7 @@ function RewardSystem() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('http://localhost:5000/api/rewards', reward);
+      const response = await axios.post('/api/rewards', reward);
       setSubmissionStatus({ success: true, id: response.data.id });
     } catch (error) {
       setSubmissionStatus({ success: false, error: error.message });
